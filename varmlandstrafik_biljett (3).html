@@ -1,0 +1,551 @@
+<!DOCTYPE html>
+<html lang="sv">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Värmlandstrafik – Mobilbiljett</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&display=swap');
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+    background: #111;
+    display: flex;
+    justify-content: center;
+    min-height: 100vh;
+  }
+
+  .app {
+    width: 100%;
+    max-width: 420px;
+    min-height: 100vh;
+    background: #111;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    position: relative;
+  }
+
+  .status-bar {
+    background: #F5C800;
+    color: #1a1a1a;
+    font-size: 11px;
+    font-weight: 700;
+    padding: 5px 18px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    letter-spacing: 0.3px;
+    flex-shrink: 0;
+  }
+
+  .top-bar {
+    background: #F5C800;
+    padding: 8px 16px 13px;
+    display: flex;
+    align-items: center;
+    gap: 11px;
+    flex-shrink: 0;
+  }
+
+  .vt-logo {
+    width: 36px; height: 36px;
+    background: #1a1a1a;
+    border-radius: 9px;
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 800; font-size: 12px; color: #F5C800; letter-spacing: -0.5px;
+    flex-shrink: 0;
+  }
+
+  .top-bar-info { flex: 1; }
+  .top-bar-title { font-size: 17px; font-weight: 800; color: #1a1a1a; line-height: 1.1; }
+  .top-bar-sub { font-size: 11px; color: #5a4a00; font-weight: 500; margin-top: 1px; }
+
+  .ticket-badge {
+    background: #1a1a1a;
+    color: #F5C800;
+    border-radius: 20px;
+    padding: 5px 12px;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.3px;
+    transition: background 0.3s;
+  }
+  .ticket-badge.active {
+    background: #1a6e36;
+    color: #fff;
+  }
+
+  /* MAIN AREA - no camera feed */
+  .main-area {
+    position: relative;
+    flex: 1;
+    background: #161616;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  /* Subtle dot grid */
+  .main-area::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background-image: radial-gradient(circle, rgba(245,200,0,0.07) 1px, transparent 1px);
+    background-size: 28px 28px;
+    pointer-events: none;
+  }
+
+  /* Ambient glow that follows light */
+  .glow {
+    position: absolute;
+    width: 300px; height: 300px;
+    border-radius: 50%;
+    background: radial-gradient(circle, rgba(245,200,0,0.10) 0%, transparent 68%);
+    transform: translate(-50%, -50%);
+    pointer-events: none;
+    transition: left 0.15s ease-out, top 0.15s ease-out, opacity 0.5s;
+    opacity: 0;
+  }
+
+  /* Hidden video */
+  #videoEl { display: none; }
+
+  /* AZTEC FLOAT */
+  .aztec-float {
+    position: absolute;
+    transform: translate(-50%, -50%);
+    pointer-events: none;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    transition: left 0.13s ease-out, top 0.13s ease-out;
+  }
+
+  .aztec-card {
+    background: white;
+    border-radius: 12px;
+    padding: 8px;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.7), 0 0 0 1px rgba(255,255,255,0.07);
+    position: relative;
+    overflow: hidden;
+  }
+
+  #aztecCanvas { display: block; border-radius: 3px; }
+
+  .aztec-label {
+    background: #F5C800;
+    color: #1a1a1a;
+    font-size: 10px;
+    font-weight: 800;
+    padding: 4px 14px;
+    border-radius: 20px;
+    letter-spacing: 0.5px;
+    white-space: nowrap;
+    font-family: 'DM Sans', sans-serif;
+    text-transform: uppercase;
+  }
+
+  /* Scanline sweep animation */
+  @keyframes scan {
+    0%   { top: 8px; opacity: 0.7; }
+    80%  { opacity: 0.7; }
+    100% { top: calc(100% - 8px); opacity: 0; }
+  }
+  .scan-line {
+    position: absolute;
+    left: 8px; right: 8px;
+    height: 2px;
+    background: linear-gradient(90deg, transparent, rgba(245,200,0,0.7), transparent);
+    border-radius: 1px;
+    animation: scan 2s ease-in-out infinite;
+  }
+
+  /* No-cam overlay */
+  .no-cam-overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 14px;
+    background: #161616;
+    z-index: 10;
+  }
+
+  .cam-icon-wrap {
+    width: 64px; height: 64px;
+    background: rgba(245,200,0,0.08);
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    border: 1.5px solid rgba(245,200,0,0.2);
+  }
+
+  .no-cam-overlay p {
+    color: #777;
+    font-size: 13px;
+    font-weight: 500;
+    text-align: center;
+    max-width: 220px;
+    line-height: 1.5;
+  }
+
+  .start-btn {
+    background: #F5C800;
+    color: #1a1a1a;
+    border: none;
+    border-radius: 28px;
+    padding: 12px 34px;
+    font-size: 14px;
+    font-weight: 700;
+    cursor: pointer;
+    font-family: 'DM Sans', sans-serif;
+    transition: transform 0.1s, opacity 0.1s;
+    letter-spacing: 0.2px;
+  }
+  .start-btn:hover { opacity: 0.9; }
+  .start-btn:active { transform: scale(0.96); }
+
+  .err-msg {
+    color: #e57373;
+    font-size: 12px;
+    text-align: center;
+    max-width: 240px;
+    display: none;
+  }
+
+  /* HINT */
+  .hint-bar {
+    background: #111;
+    border-top: 1px solid rgba(245,200,0,0.1);
+    padding: 7px 16px;
+    font-size: 11px;
+    color: #555;
+    text-align: center;
+    flex-shrink: 0;
+    transition: color 0.4s;
+    letter-spacing: 0.1px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+  }
+  .hint-bar.active { color: #F5C800; }
+
+  .hint-dot {
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: #333;
+    flex-shrink: 0;
+    transition: background 0.4s;
+  }
+  .hint-bar.active .hint-dot { background: #F5C800; }
+
+  /* BOTTOM BAR */
+  .bottom-bar {
+    background: #F5C800;
+    padding: 9px 16px 11px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-shrink: 0;
+  }
+
+  .bottom-info { font-size: 11px; color: #5a4a00; font-weight: 500; }
+  .bottom-zone { font-size: 15px; font-weight: 800; color: #1a1a1a; margin-top: 1px; }
+
+  .bottom-time {
+    background: #1a1a1a;
+    color: #F5C800;
+    border-radius: 20px;
+    padding: 6px 14px;
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+  }
+
+  /* BOTTOM NAV */
+  .bottom-nav {
+    background: #F5C800;
+    border-top: 1px solid rgba(0,0,0,0.08);
+    display: flex;
+    padding: 5px 0 10px;
+    flex-shrink: 0;
+  }
+
+  .nav-item {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 3px;
+    padding: 5px 4px;
+    border: none;
+    background: none;
+    color: rgba(80,64,0,0.45);
+    font-size: 10px;
+    font-weight: 600;
+    cursor: pointer;
+    font-family: 'DM Sans', sans-serif;
+    letter-spacing: 0.1px;
+    transition: color 0.15s;
+  }
+  .nav-item.active { color: #1a1a1a; }
+  .nav-item svg { width: 21px; height: 21px; }
+</style>
+</head>
+<body>
+<div class="app">
+
+  <div class="status-bar">
+    <span id="timeDisp">--:--</span>
+    <span style="letter-spacing:2px;">&#9679;&#9679;&#9679;</span>
+  </div>
+
+  <div class="top-bar">
+    <div class="vt-logo">VT</div>
+    <div class="top-bar-info">
+      <div class="top-bar-title">Värmlandstrafik</div>
+      <div class="top-bar-sub">Mobilbiljett &mdash; Enkelbiljett</div>
+    </div>
+    <div class="ticket-badge" id="statusBadge">Inaktiv</div>
+  </div>
+
+  <div class="main-area" id="mainArea">
+    <video id="videoEl" autoplay playsinline muted></video>
+
+    <div class="glow" id="glow"></div>
+
+    <div class="aztec-float" id="aztecFloat" style="left:50%;top:50%;">
+      <div class="aztec-card">
+        <canvas id="aztecCanvas" width="152" height="152" style="width:152px;height:152px;"></canvas>
+        <div class="scan-line"></div>
+      </div>
+      <div class="aztec-label">Visa för föraren</div>
+    </div>
+
+    <div class="no-cam-overlay" id="noCamOverlay">
+      <div class="cam-icon-wrap">
+        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#F5C800" stroke-width="1.5">
+          <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
+          <circle cx="12" cy="13" r="4"/>
+        </svg>
+      </div>
+      <p>Aktivera kameran för att ljusspårning ska fungera</p>
+      <button class="start-btn" onclick="startCamera()">Aktivera biljett</button>
+      <span class="err-msg" id="errMsg"></span>
+    </div>
+  </div>
+
+  <div class="hint-bar" id="hintBar">
+    <div class="hint-dot" id="hintDot"></div>
+    <span id="hintText">Aztec-koden följer det ljusaste området</span>
+    <button id="mirrorBtn" onclick="toggleMirror()" style="background:rgba(245,200,0,0.15);border:1px solid rgba(245,200,0,0.3);color:#F5C800;border-radius:12px;padding:2px 10px;font-size:10px;font-weight:700;cursor:pointer;font-family:inherit;margin-left:6px;">Spegla: På</button>
+  </div>
+
+  <div class="bottom-bar">
+    <div>
+      <div class="bottom-info">Zon A &rarr; Zon B &nbsp;&bull;&nbsp; Vuxen</div>
+      <div class="bottom-zone">Karlstad lokal</div>
+    </div>
+    <div class="bottom-time" id="timeOut">--:--</div>
+  </div>
+
+  <div class="bottom-nav">
+    <button class="nav-item">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+      Start
+    </button>
+    <button class="nav-item active">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><rect x="2" y="3" width="20" height="18" rx="2"/><path d="M8 10h8M8 14h5"/></svg>
+      Biljett
+    </button>
+    <button class="nav-item">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+      Planera
+    </button>
+    <button class="nav-item">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+      Konto
+    </button>
+  </div>
+
+</div>
+
+<script>
+  let cameraRunning = false;
+  let mirrorX = true;
+  let smoothX = 0.5, smoothY = 0.5;
+  let lightDetected = false;
+  let offscreen = null;
+
+  function updateTime() {
+    let now = new Date();
+    let t = now.getHours().toString().padStart(2,'0') + ':' + now.getMinutes().toString().padStart(2,'0');
+    document.getElementById('timeDisp').textContent = t;
+    document.getElementById('timeOut').textContent = t;
+  }
+  updateTime();
+  setInterval(updateTime, 10000);
+
+  drawAztec();
+
+  async function startCamera() {
+    try {
+      let stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: 'user', width: { ideal: 1280 }, height: { ideal: 720 } }
+      });
+      let video = document.getElementById('videoEl');
+      video.srcObject = stream;
+      video.onloadedmetadata = () => {
+        video.play();
+        offscreen = document.createElement('canvas');
+        offscreen.width = Math.floor(video.videoWidth / 4);
+        offscreen.height = Math.floor(video.videoHeight / 4);
+        cameraRunning = true;
+        document.getElementById('noCamOverlay').style.display = 'none';
+        let badge = document.getElementById('statusBadge');
+        badge.textContent = 'Aktiv';
+        badge.classList.add('active');
+        detectLoop();
+      };
+    } catch(e) {
+      let err = document.getElementById('errMsg');
+      err.style.display = 'block';
+      err.textContent = 'Kamera nekad — tillåt åtkomst i webbläsaren och ladda om.';
+    }
+  }
+
+  function detectLoop() {
+    if (!cameraRunning) return;
+    requestAnimationFrame(detectLoop);
+
+    let video = document.getElementById('videoEl');
+    if (video.readyState < 2) return;
+
+    let ow = offscreen.width, oh = offscreen.height;
+    let offCtx = offscreen.getContext('2d');
+    offCtx.drawImage(video, 0, 0, ow, oh);
+
+    let imgData = offCtx.getImageData(0, 0, ow, oh);
+    let d = imgData.data;
+    let maxB = 0, bx = 0, by = 0;
+
+    for (let y = 0; y < oh; y++) {
+      for (let x = 0; x < ow; x++) {
+        let i = (y * ow + x) * 4;
+        let r = d[i], g = d[i+1], b = d[i+2];
+        let redScore = r - Math.max(g, b);
+        let score = redScore > 40 ? redScore : 0;
+        if (score > maxB) { maxB = score; bx = x; by = y; }
+      }
+    }
+
+    let threshold = 80;
+    let glow = document.getElementById('glow');
+    let float = document.getElementById('aztecFloat');
+    let hint = document.getElementById('hintBar');
+    let hintText = document.getElementById('hintText');
+
+    if (maxB > threshold) {
+      let tx = mirrorX ? 1 - (bx / ow) : (bx / ow);
+      let ty = by / oh;
+      smoothX = smoothX * 0.8 + tx * 0.2;
+      smoothY = smoothY * 0.8 + ty * 0.2;
+
+      float.style.left = (smoothX * 100) + '%';
+      float.style.top = (smoothY * 100) + '%';
+
+      glow.style.left = (smoothX * 100) + '%';
+      glow.style.top = (smoothY * 100) + '%';
+      glow.style.opacity = '1';
+
+      if (!lightDetected) {
+        lightDetected = true;
+        hintText.textContent = 'Ljus detekterat — Aztec-koden följer ljuset';
+        hint.classList.add('active');
+      }
+    } else {
+      smoothX = smoothX * 0.75 + 0.5 * 0.25;
+      smoothY = smoothY * 0.75 + 0.5 * 0.25;
+      float.style.left = (smoothX * 100) + '%';
+      float.style.top = (smoothY * 100) + '%';
+      glow.style.opacity = '0';
+
+      if (lightDetected) {
+        lightDetected = false;
+        hintText.textContent = 'Inget ljus — Aztec-koden centreras';
+        hint.classList.remove('active');
+      }
+    }
+  }
+
+  function toggleMirror() {
+    mirrorX = !mirrorX;
+    let btn = document.getElementById('mirrorBtn');
+    btn.textContent = mirrorX ? 'Spegla: På' : 'Spegla: Av';
+  }
+
+  function drawAztec() {
+    let canvas = document.getElementById('aztecCanvas');
+    let c = canvas.getContext('2d');
+    let size = 152;
+    let seed = hashStr('VT-2025-KARLSTAD-A-001');
+    let rng = seededRng(seed);
+    let n = 21;
+    let cell = size / n;
+
+    c.fillStyle = 'white';
+    c.fillRect(0, 0, size, size);
+
+    let grid = makeAztecGrid(n, rng);
+    c.fillStyle = '#111';
+    for (let y = 0; y < n; y++)
+      for (let x = 0; x < n; x++)
+        if (grid[y][x])
+          c.fillRect(Math.round(x*cell), Math.round(y*cell), Math.ceil(cell)-0.5, Math.ceil(cell)-0.5);
+  }
+
+  function makeAztecGrid(n, rng) {
+    let g = Array.from({length: n}, () => new Array(n).fill(0));
+    for (let y = 2; y < n-2; y++)
+      for (let x = 2; x < n-2; x++)
+        g[y][x] = rng() > 0.5 ? 1 : 0;
+    for (let i = 0; i < n; i++) {
+      g[0][i] = i%2; g[n-1][i] = i%2;
+      g[i][0] = i%2; g[i][n-1] = i%2;
+    }
+    for (let i = 1; i < n-1; i++) {
+      g[1][i] = (i+1)%2; g[n-2][i] = (i+1)%2;
+      g[i][1] = (i+1)%2; g[i][n-2] = (i+1)%2;
+    }
+    let cx = Math.floor(n/2), cy = Math.floor(n/2);
+    for (let d = 0; d <= 4; d++) {
+      let black = d%2===0;
+      for (let y = cy-d; y <= cy+d; y++)
+        for (let x = cx-d; x <= cx+d; x++)
+          if ((Math.abs(y-cy)===d || Math.abs(x-cx)===d) && y>=0 && y<n && x>=0 && x<n)
+            g[y][x] = black ? 1 : 0;
+    }
+    g[cy][cx] = 1;
+    return g;
+  }
+
+  function hashStr(s) {
+    let h = 0;
+    for (let i = 0; i < s.length; i++) h = Math.imul(31,h) + s.charCodeAt(i) | 0;
+    return Math.abs(h);
+  }
+
+  function seededRng(seed) {
+    let s = seed;
+    return () => { s=(s*1664525+1013904223)&0xffffffff; return (s>>>0)/0xffffffff; };
+  }
+</script>
+</body>
+</html>
